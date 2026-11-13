@@ -1,0 +1,414 @@
+/* **********************************************************
+ * Copyright (c) 2011-2012 Google, Inc.  All rights reserved.
+ * Copyright (c) 2009-2010 VMware, Inc.  All rights reserved.
+ * **********************************************************/
+
+/* Dr. Memory: the memory debugger
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; 
+ * version 2.1 of the License, and no later version.
+
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Library General Public License for more details.
+
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+/* Conventions:
+ * + We use \verbatim b/c it nicely highlights command lines, but
+ *   because aliases aren't expanded in \verbatim (or \code), we have
+ *   a pre-processing pass that replaces them.  We used to use
+ *   \par<tt>...</tt> to get aliases expanded but it doesn't look
+ *   as nice.  Note that \if is NOT supported by the script so
+ *   use it outside the \verbatim.
+ */
+
+/**
+***************************************************************************
+***************************************************************************
+\page page_install Installing Dr. Memory
+
+Select your platform for instructions on how to install Dr. Memory onto
+your computer:
+
+ - \subpage page_install_linux
+ - \subpage page_install_windows
+
+***************************************************************************
+\page page_install_linux Installing on Linux
+
+********************
+\section sec_linux_utils System Requirements
+
+Ensure your Linux machine has perl installed, as it is used for the current
+front-end to Dr. Memory.
+
+********************
+\section sec_linux_install Installing
+
+Download the \p .tar.gz version of Dr. Memory.  Untar the package into a
+directory of your choice:
+
+\verbatim
+tar xzf DrMemory-Linux-X.X.X-X.tar.gz
+\endverbatim
+
+Now either place the \p bin subdirectory of the Dr. Memory directory
+structure on your PATH, or invoke Dr. Memory via its full path.
+
+***************************************************************************
+\page page_install_windows Installing on Windows
+
+********************
+\section sec_windows_system System Install
+
+Download the \p .exe version of Dr. Memory.  Run the downloaded file to
+launch the installer.  We recommend selecting the checkbox "Add to system
+path for current user" to simplify use of the tool.  You can also elect to
+place a Dr. Memory icon on the desktop if you would like to run your
+applications under Dr. Memory by dragging and dropping.
+
+********************
+\section sec_windows_local Local Install
+
+Download the \p .zip version of Dr. Memory.  Extract the files from the \p
+.zip archive into a directory of your choice.  Now either place the \p bin
+subdirectory of the Dr. Memory directory structure on your PATH, or invoke
+Dr. Memory via its full path.
+
+***************************************************************************
+\page page_prep Preparing Your Application
+
+First we give cross-plaform guidelines for how to build your application,
+before giving specific compiler parameters for each platform.
+
+Currently, Dr. Memory only supports 32-bit applications, so be sure to
+compile your target application as 32-bit.
+
+In order to obtain line number information, compile your target
+application with debugging information enabled.
+On Linux, Dr. Memory supports ELF files with DWARF2 line information.  On
+Windows, Dr. Memory supports PDB debug information (produced by Visual
+Studio) as well as PECOFF files with DWARF2 line information (produced by
+MinGW gcc).
+
+You'll get better callstacks in error reports if you disable inlining.
+Dr. Memory should be able to determine callstacks in the presence of frame
+pointer optimizations (FPO) in most cases, but if you see strange
+callstacks in an optimized application consider disabling FPO.
+
+If your application links with a static library that was built with frame
+pointer optimizations and you observe missing frames on your callstacks,
+try running with the Dr. Memory runtime option \p -no_callstack_use_top_fp.
+This will add some additional overhead on malloc-intensive applications,
+but should eliminate skipped frames.
+
+********************
+\section sec_prep_linux Linux
+
+Ensure your Linux installation is able to build 32-bit applications.  On
+64-bit Ubuntu you will want these packages:
+
+\verbatim
+sudo apt-get install ia32-libs g++-multilib
+\endverbatim
+
+Dr. Memory currently only supports DWARF2 line information, not stabs, but
+DWARF2 is the default for modern versions of \p gcc.
+
+Here is a sample command line for compiling your application that combines
+all of the above recommendations:
+
+\verbatim
+g++ -m32 -g -fno-inline -fno-omit-frame-pointer myfile1.cpp myfile2.cpp -o myapp
+\endverbatim
+
+********************
+\section sec_prep_windows Windows Visual Studio
+
+Visual Studio builds 32-bit applications by default, so no action is
+required on that front.
+
+To include debug information, use the \p /Zi flag to the Visual Studio
+compiler.  From the IDE, Press Alt-F7 to bring up the configuration
+properties of your build target. Under "Configuration Properties | C/C++ |
+General", the "Debug Information Format" entry should say "Program Database
+(/Zi)".
+
+**********
+\subsection sec_prep_win_libc Release C Library Recommended
+
+While the debug C library (specified with the \p /MDd or \p /MTd flags) is
+supported, its use requires Dr. Memory to disable some of its error
+detection.  The debug C library also prevents Dr. Memory from controlling
+the redzone size it places around heap allocations.  The debug C heap
+checks will mostly be disabled as they overlap and can conflict with
+Dr. Memory's checks.  It is recommended that the release version of the
+heap routines be used.  Additionally, when using static debug versions of
+msvcrt (the \p /MTd flag), if your application does not have symbols then
+Dr. Memory will not be able to identify and avoid conflicts with the C
+library's own heap debugging facilities, which may lead to false positives
+and/or false negatives.  Be sure to build with debugging information
+included.
+
+Thus, we recommend building your application with either the release DLL
+(\p /MD) or the release static (\p /MT) C library.  From the Visual Studio
+IDE, the release library can be selected from Visual Studio's configuration
+dialog (press Alt-F7 to bring it up) under the "Configuration Properties |
+C/C++ | Code Generation | Runtime Library" settings.  Change
+"Multi-threaded Debug DLL (/MDd)" to "Multi-threaded DLL (/MD)".
+
+If your application is C++, another step is necessary when using /MD to
+avoid the C++ Debug DLL: under "Configuration Properties | C/C++ |
+Preprocessor", remove "_DEBUG" from the list of "Preprocessor Definitions".
+It probably says "WIN32;_DEBUG;_CONSOLE" by default. Change it to
+"WIN32;_CONSOLE".
+
+**********
+\subsection sec_prep_win_rtc Disable Runtime Checks
+
+The Visual Studio compiler's \p /RTC1 flag can prevent Dr. Memory from
+reporting uninitialized reads of local variables, and the \p /RTC1 checks
+for uninitialized reads themselves may not catch everything that Dr. Memory
+finds.  However, \p /RTC1 does perform additional stack checks that
+Dr. Memory does not, so for best results, your application should be run
+under Dr. Memory without \p /RTC1, and run natively with \p /RTC1.
+
+In the Visual Studio IDE, press Alt-F7 and then under "Configuration
+Properties | C/C++ | Code Generation" ensure "Basic Runtime Checks" says
+"Default".
+
+**********
+\subsection sec_prep_win_sum Parameter Summary
+
+To disable inlining, use the \p /Ob0 parameter.  In the Visual Studio IDE,
+press Alt-F7 and then under "Configuration Properties | C/C++ |
+Optimization" ensure "Inline Function Expansion" says "Disabled (/Ob0)".
+
+To disable frame pointer optimization, use the \p Oy- parameter.  In the
+Visual Studio IDE, press Alt-F7 and then under "Configuration Properties |
+C/C++ | Optimization" ensure "Omit Frame Pointers" says "No (/Oy-)".
+
+Here is a sample command line for Visual Studio:
+
+\verbatim
+cl /Zi /MT /EHsc /Oy- /Ob0 /Femyapp.exe *.cpp
+\endverbatim
+
+********************
+\section sec_prep_mingw Windows MinGW
+
+Dr. Memory supports 32-bit applications compiled with the MinGW gcc or g++
+compilers, but will only provide line number information if DWARF2
+debugging information is present.  The default for MinGW gcc prior to
+version 4.3 is to use the stabs format, which is not supported by
+Dr. Memory.  Pass the \p -ggdb option to gcc to generate DWARF2 format
+instead.
+
+You install the MinGW compiler in a Cygwin installation by running the
+Cygwin installer (\p setup.exe), searching for "mingw", opening Devel, and
+installing \p mingw-gcc-g++.  Alternatively, MinGW can be installed on its
+own.
+
+For MinGW C++ applications, we recommending building with static libstdc++
+libraries.  Pass <tt>-static-libgcc -static-libstdc++</tt> to g++ to
+request this.  These static libraries contain frame pointer optimizations
+but Dr. Memory automatically enables the \p -no_callstack_use_top_fp
+runtime option for MinGW applications.
+
+Here is a sample command line for MinGW:
+
+\verbatim
+i686-pc-mingw32-g++.exe -static-libgcc -static-libstdc++ -ggdb -o myapp.exe myfile1.cpp myfile2.cpp
+\endverbatim
+
+********************
+\section sec_prep_cygwin Windows Cygwin: Not Supported
+
+Currently there is no support for applications built with Cygwin gcc or g++.
+
+The regular Dr. Memory build can be executed just fine from a Cygwin
+shell when targeting non-Cygwin applications.
+
+***************************************************************************
+\page page_running Running Dr. Memory
+
+Once you have installed Dr. Memory and built your application properly, the
+next step is to execute it on your workload of choice under Dr. memory.
+
+********************
+\section sec_invocation Invoking Dr. Memory
+
+Run your application as you normally would from a command prompt (on
+Windows, either the \p cmd shell or a Cygwin prompt), with \p \FRONT_END
+and "--" prefixed to the command line (the "--" separates any arguments to
+Dr. Memory from the application being run).
+
+On Windows:
+\verbatim
+drmemory.exe -- c:/path/to/my/app args to my app
+\endverbatim
+
+On Linux:
+\verbatim
+drmemory.pl -- /path/to/my/app args to my app
+\endverbatim
+
+Examples throughout the rest of the documentation will be use one platform,
+but can readily be adapted to the other by changing the front-end (\p
+drmemory.exe or \p drmemory.pl) and the path style.
+
+If as part of \ref page_install you did not add Dr. Memory to your path,
+you'll need to specify the full path to Dr. Memory.
+
+On Windows, you can also drag-and-drop your application onto \p drmemory.exe in 
+Windows Explorer or on the Desktop if you requested a Desktop shorcut upon
+installation.
+
+When running scripts it is best to explicitly invoke the interpreter rather
+than invoking the script directly.  For example:
+
+\verbatim
+drmemory.pl -- /usr/bin/perl ./myscript.pl
+\endverbatim
+
+********************
+\section sec_results Examining the Results
+
+Dr. Memory's results are written to a file called \p results.txt inside a
+subdirectory created for each invocation of Dr. Memory, inside Dr. Memory's
+log directory.  The log directory by default is the \p logs subdirectory of
+the unpacked installation, or the Dr. Memory directory inside your profile
+directory when Dr. Memory is installed into <tt>Program Files</tt> on Windows.  It can be
+changed with the \p -logdir option:
+
+\verbatim
+drmemory.exe -logdir c:/logs -- c:/path/to/my/app
+\endverbatim
+
+When an application is executed under Dr. Memory's control, it creates a
+subdirectory in the base log directory named
+"DrMemory-<appname>.<pid>.NNN", where NNN is a counter that is incremented
+to ensure unique names.
+
+On Windows, the results files is automatically opened in \p notepad when
+the application exits.  This only occurs for the top-level process; if it
+created child processes, they will be followed by Dr. Memory and have their
+own result directories and files, but these will not be automatically
+displayed.  The option \p -batch can be used to disable the launch of \p
+notepad at application exit.
+
+For full details on each type of error reported by Dr. Memory, see \ref page_types.
+
+If you would like to attach a debugger at the point an error is first
+detected, use the \p -pause_at_unaddressable or \p -pause_at_uninitialized
+options (see \ref page_options).
+
+********************
+\section sec_children Controlling Child Processes
+
+By default, Dr. Memory monitors all child processes.  To disable this
+behavior and not monitor any children, use this option:
+
+\verbatim
+drmemory.exe -no_follow_children -- c:/path/to/my/app
+\endverbatim
+
+On Windows, to follow all children except certain applications, run this
+command with the executable name of each application you do not wish to
+monitor, prior to running Dr. Memory with default options:
+
+\verbatim
+drconfig.exe -quiet -reg <myapp> -norun
+\endverbatim
+
+Where "myapp" is the basename of your executable (i.e., the file name
+without any directories).
+
+The \p drconfig.exe tool is in the same directory as \p drmemory.exe and is
+only available on Windows in the current release.
+
+This \p -norun request is permanent and affects all subsequent Dr. Memory
+executions by the user that issued the \p -norun request.  To undo it, use
+this command:
+
+\verbatim
+drconfig.exe -quiet -unreg <myapp>
+\endverbatim
+
+\if ISSUE_614
+********************
+\section sec_aggregate Aggregating Results From Multiple Processes
+
+Dr. Memory supports aggregating results from multiple log directories,
+whether from multiple processes of a multi-process application or from
+multiple runs of the same application.  Simply use the \p -aggregate option
+and supply the list of log directories, or a single directory containing
+the log directories as sub-directories to aggregate all of them:
+
+\verbatim
+drmemory.pl -aggregate DrMemory-myapp.1234.000 DrMemory-myapp.1235.000 
+\endverbatim
+
+\verbatim
+drmemory.pl -aggregate /parent/logdir/
+\endverbatim
+
+Currently the \p -aggregate option is not available on Windows.
+\endif
+
+********************
+\section sec_daemon Applications That Do Not Exit
+
+While Dr. Memory updates the \p results.txt file as the application runs,
+it does not perform leak checking or produce a summary of errors until the
+end of the run.  For applications that do not have a normal exit, such as
+daemons, Dr. Memory provides a method of forcing end-of-run actions.
+
+Run \p \FRONT_END with the \p -nudge option and the process identifier of
+the application in order to request leak checking and other end-of-run
+actions:
+
+\verbatim
+drmemory.exe -nudge <processid>
+\endverbatim
+
+\if ISSUE_446
+********************
+\section sec_twostep Post-Run Symbol Processing
+
+Some applications have very large symbol files.  To reduce resource usage
+during an application run, symbol processing can be disabled while the
+application executes and instead be performed after the run.  Use the \p
+-skip_results option when running the application.  Once finished, re-run
+Dr. Memory with the \p -results option and the log directory created during
+the run (which contains the raw data):
+
+\verbatim
+drmemory.pl -skip_results -- myapp myargs
+\endverbatim
+
+\verbatim
+drmemory.pl -results DrMemory-myapp.9876.000
+\endverbatim
+
+If \p -results is invoked on a different machine where the application
+executable is not located at the same path as when it was executed with \p
+-skip_results, use the \p -results_app parameter to specify the executable
+along with the \p -results parameter.
+
+The \p -skip_results option is not currently available on Windows.
+\endif
+
+****************************************************************************
+****************************************************************************
+*/
+/* It's good to split up large C comments: we've hit some sort of doxygen
+ * internal buffering error before if one comment gets too long.
+ */
